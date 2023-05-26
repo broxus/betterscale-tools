@@ -7,9 +7,13 @@ use crate::ed25519::*;
 use crate::models::*;
 use crate::system_accounts::*;
 
-pub fn prepare_zerostates<P: AsRef<Path>>(path: P, config: &str) -> Result<String> {
-    let mut mc_zerstate =
-        prepare_mc_zerostate(config).context("Failed to prepare masterchain zerostate")?;
+pub fn prepare_zerostates<P: AsRef<Path>>(
+    path: P,
+    config: &str,
+    validators_pubkeys: Vec<PublicKey>,
+) -> Result<String> {
+    let mut mc_zerstate = prepare_mc_zerostate(config, validators_pubkeys)
+        .context("Failed to prepare masterchain zerostate")?;
     let now = mc_zerstate.gen_time();
 
     let mut ex = mc_zerstate
@@ -42,7 +46,7 @@ pub fn prepare_zerostates<P: AsRef<Path>>(path: P, config: &str) -> Result<Strin
 
             let path = path
                 .as_ref()
-                .join(format!("{:x}.boc", descr.zerostate_file_hash));
+                .join(format!("zerostate/{:x}.boc", descr.zerostate_file_hash));
 
             std::fs::write(path, bytes).context("Failed to write workchain zerostate")?;
 
@@ -93,7 +97,7 @@ pub fn prepare_zerostates<P: AsRef<Path>>(path: P, config: &str) -> Result<Strin
         ton_types::serialize_toc(&cell).context("Failed to serialize masterchain zerostate")?;
     let file_hash = ton_types::UInt256::calc_file_hash(&bytes);
 
-    let path = path.as_ref().join(format!("{file_hash:x}.boc"));
+    let path = path.as_ref().join(format!("zerostate/{file_hash:x}.boc"));
     std::fs::write(path, bytes).context("Failed to write masterchain zerostate")?;
 
     let shard_id = ton_block::SHARD_FULL as i64;
@@ -111,10 +115,20 @@ pub fn prepare_zerostates<P: AsRef<Path>>(path: P, config: &str) -> Result<Strin
     Ok(serde_json::to_string_pretty(&json).expect("Shouldn't fail"))
 }
 
-fn prepare_mc_zerostate(config: &str) -> Result<ton_block::ShardStateUnsplit> {
+fn prepare_mc_zerostate(
+    config: &str,
+    validators_pubkeys: Vec<PublicKey>,
+) -> Result<ton_block::ShardStateUnsplit> {
     let jd = &mut serde_json::Deserializer::from_str(config);
     let mut data = serde_path_to_error::deserialize::<_, ZerostateConfig>(jd)
         .context("Failed to parse state config")?;
+
+    let new_keys: Vec<ton_types::UInt256> = validators_pubkeys
+        .into_iter()
+        .map(|it| ton_types::UInt256::from_slice(it.as_bytes()))
+        .collect();
+
+    data.config.validators_public_keys.extend(new_keys);
 
     let minter_public_key = PublicKey::from_bytes(*data.minter_public_key.as_slice())
         .context("Invalid minter public key")?;

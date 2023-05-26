@@ -1,8 +1,29 @@
+#![deny(
+    non_ascii_idents,
+    non_shorthand_field_patterns,
+    no_mangle_generic_items,
+    overflowing_literals,
+    path_statements,
+    unused_allocation,
+    unused_comparisons,
+    unused_parens,
+    while_true,
+    trivial_numeric_casts,
+    unused_extern_crates,
+    unused_import_braces,
+    unused_qualifications,
+    unused_must_use
+)]
+
+use std::fs::create_dir_all;
 use std::io::Read;
 use std::net::SocketAddrV4;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
+use crate::full_config::build_full_config;
+use crate::full_config::file::{load_object_from_file, save_to_file};
+use crate::full_config::models::nodes_config::NodesConfig;
 use anyhow::{Context, Result};
 use argh::FromArgs;
 use everscale_crypto::ed25519;
@@ -12,7 +33,9 @@ use ton_block::Serializable;
 use self::system_accounts::MultisigType;
 
 mod config;
+mod crypto;
 mod dht;
+mod full_config;
 mod mine;
 mod models;
 mod system_accounts;
@@ -35,19 +58,35 @@ async fn run(app: App) -> Result<()> {
             print!("{}", dht::generate_dht_config(args.address, &secret));
             Ok(())
         }
-        Subcommand::ZeroState(args) => {
-            let config =
-                std::fs::read_to_string(args.config).context("Failed to read zerostate config")?;
-
+        Subcommand::ConfigFull(args) => {
             if !args.output.is_dir() {
                 return Err(anyhow::anyhow!("Expected `output` param to be a directory"));
             }
 
-            print!(
-                "{}",
-                zerostate::prepare_zerostates(args.output, &config)
-                    .context("Failed to prepare zerostates")?
-            );
+            let zerostate_folder = args.output.join(Path::new("zerostate"));
+
+            if !zerostate_folder.exists() {
+                create_dir_all(&zerostate_folder)?;
+            }
+
+            let nodes_config = load_object_from_file::<NodesConfig>(&args.nodes)?;
+            let validators_pubkeys = build_full_config(&nodes_config, &args.output)?;
+
+            let zerostate_template = std::fs::read_to_string(&nodes_config.zerostate_config.from)
+                .context("Failed to read zerostate config")?;
+
+            let zerostate_config = zerostate::prepare_zerostates(
+                &args.output,
+                &zerostate_template,
+                validators_pubkeys,
+            )?;
+
+            save_to_file(
+                &zerostate_config,
+                &args.output.join(&nodes_config.zerostate_config.to),
+            )
+            .context("Failed to save zerostates")?;
+
             Ok(())
         }
         Subcommand::Account(args) => {
@@ -216,7 +255,7 @@ struct App {
 #[argh(subcommand)]
 enum Subcommand {
     DhtNode(CmdDhtNode),
-    ZeroState(CmdZeroState),
+    ConfigFull(CmdConfigFull),
     Account(CmdAccount),
     KeyPair(CmdKeyPair),
     Config(CmdConfig),
@@ -237,12 +276,12 @@ struct CmdDhtNode {
 }
 
 #[derive(Debug, PartialEq, FromArgs)]
-/// Generates zerostate boc file
-#[argh(subcommand, name = "zerostate")]
-struct CmdZeroState {
-    /// path to the zerostate config
-    #[argh(option, long = "config", short = 'c')]
-    config: PathBuf,
+/// Generates full config files
+#[argh(subcommand, name = "config-full")]
+struct CmdConfigFull {
+    /// path to the nodes config
+    #[argh(option, long = "nodes", short = 'n')]
+    nodes: PathBuf,
 
     /// destination folder path
     #[argh(option, long = "output", short = 'o')]
@@ -542,11 +581,11 @@ fn hex_or_base64<const N: usize>(data: &str) -> Result<[u8; N]> {
     }
 }
 
-struct ArgsOrVersion<T: argh::FromArgs>(T);
+struct ArgsOrVersion<T: FromArgs>(T);
 
-impl<T: argh::FromArgs> argh::TopLevelCommand for ArgsOrVersion<T> {}
+impl<T: FromArgs> argh::TopLevelCommand for ArgsOrVersion<T> {}
 
-impl<T: argh::FromArgs> argh::FromArgs for ArgsOrVersion<T> {
+impl<T: FromArgs> FromArgs for ArgsOrVersion<T> {
     fn from_args(command_name: &[&str], args: &[&str]) -> Result<Self, argh::EarlyExit> {
         /// Also use argh for catching `--version`-only invocations
         #[derive(argh::FromArgs)]

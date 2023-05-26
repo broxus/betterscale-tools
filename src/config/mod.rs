@@ -1,3 +1,5 @@
+// mod builder;
+
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -366,7 +368,7 @@ fn make_client(url: String) -> Result<Arc<dyn Transport>> {
 #[derive(Debug, Clone)]
 pub enum Action {
     /// Param index and param value
-    SubmitParam(ton_block::ConfigParamEnum),
+    SubmitParam(ConfigParamEnum),
 
     /// Config contract code
     #[allow(unused)]
