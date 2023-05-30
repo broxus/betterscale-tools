@@ -2,18 +2,43 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 use ton_block::{AddSub, Serializable};
+use ton_types::UInt256;
 
 use crate::ed25519::*;
+use crate::file::serialize_to_file;
+use crate::models::global_config::ValidatorConfigGlobal;
 use crate::models::*;
 use crate::system_accounts::*;
+use crate::zerostate::config_generator::build_configs;
 
 pub fn prepare_zerostates<P: AsRef<Path>>(
     path: P,
     config: &str,
-    validators_pubkeys: Vec<PublicKey>,
+    zerostate_folder: &Path,
 ) -> Result<String> {
-    let mut mc_zerstate = prepare_mc_zerostate(config, validators_pubkeys)
+    let zerostate_config =
+        serde_json::from_str::<ZerostateConfig>(config).context("Failed to parse state config")?;
+
+    let validators_config = zerostate_config.validators.clone();
+    let (pubkeys, global_config) = match validators_config.kind {
+        ValidatorsConfigType::Generate => {
+            let (validators_pubkeys, global_config) =
+                build_configs(&validators_config, path.as_ref())?;
+
+            let pubkeys = validators_pubkeys
+                .into_iter()
+                .map(|it| UInt256::from_slice(it.as_bytes()))
+                .collect();
+
+            (pubkeys, Some(global_config))
+        }
+        // TODO required implementation for static pubkeys
+        _ => (vec![], None),
+    };
+
+    let mut mc_zerstate = prepare_mc_zerostate(zerostate_config, pubkeys)
         .context("Failed to prepare masterchain zerostate")?;
+
     let now = mc_zerstate.gen_time();
 
     let mut ex = mc_zerstate
@@ -38,15 +63,13 @@ pub fn prepare_zerostates<P: AsRef<Path>>(
                 .context("Failed to serialize workchain state")?;
             descr.zerostate_root_hash = cell.repr_hash();
             let bytes = ton_types::serialize_toc(&cell)?;
-            descr.zerostate_file_hash = ton_types::UInt256::calc_file_hash(&bytes);
+            descr.zerostate_file_hash = UInt256::calc_file_hash(&bytes);
 
             workchains
                 .set(&workchain_id, &descr)
                 .context("Failed to update workchain info")?;
 
-            let path = path
-                .as_ref()
-                .join(format!("zerostate/{:x}.boc", descr.zerostate_file_hash));
+            let path = zerostate_folder.join(format!("{:x}.boc", descr.zerostate_file_hash));
 
             std::fs::write(path, bytes).context("Failed to write workchain zerostate")?;
 
@@ -95,10 +118,12 @@ pub fn prepare_zerostates<P: AsRef<Path>>(
         .context("Failed to serialize masterchain zerostate")?;
     let bytes =
         ton_types::serialize_toc(&cell).context("Failed to serialize masterchain zerostate")?;
-    let file_hash = ton_types::UInt256::calc_file_hash(&bytes);
+    let file_hash = UInt256::calc_file_hash(&bytes);
 
-    let path = path.as_ref().join(format!("zerostate/{file_hash:x}.boc"));
-    std::fs::write(path, bytes).context("Failed to write masterchain zerostate")?;
+    {
+        let path = zerostate_folder.join(format!("{file_hash:x}.boc"));
+        std::fs::write(&path, bytes).context("Failed to write masterchain zerostate")?;
+    }
 
     let shard_id = ton_block::SHARD_FULL as i64;
     let json = serde_json::json!({
@@ -112,23 +137,37 @@ pub fn prepare_zerostates<P: AsRef<Path>>(
         }
     });
 
+    if validators_config.kind == ValidatorsConfigType::Generate {
+        if let Some(mut global_config) = global_config {
+            let validator_config_global =
+                serde_json::from_value::<ValidatorConfigGlobal>(json.clone())?;
+            global_config.validator = validator_config_global;
+
+            for (i, _) in validators_config.nodes.iter().enumerate() {
+                let base_folder = format!("node{i}");
+                let path = &path
+                    .as_ref()
+                    .join(base_folder)
+                    .join("ton-global.config.json");
+
+                serialize_to_file(&global_config, path)?;
+            }
+
+            serialize_to_file(
+                &global_config,
+                &path.as_ref().join("ton-global.config.json"),
+            )?;
+        }
+    }
+
     Ok(serde_json::to_string_pretty(&json).expect("Shouldn't fail"))
 }
 
 fn prepare_mc_zerostate(
-    config: &str,
-    validators_pubkeys: Vec<PublicKey>,
+    data: ZerostateConfig,
+    validators_public_keys: Vec<UInt256>,
 ) -> Result<ton_block::ShardStateUnsplit> {
-    let jd = &mut serde_json::Deserializer::from_str(config);
-    let mut data = serde_path_to_error::deserialize::<_, ZerostateConfig>(jd)
-        .context("Failed to parse state config")?;
-
-    let new_keys: Vec<ton_types::UInt256> = validators_pubkeys
-        .into_iter()
-        .map(|it| ton_types::UInt256::from_slice(it.as_bytes()))
-        .collect();
-
-    data.config.validators_public_keys.extend(new_keys);
+    let mut data = data;
 
     let minter_public_key = PublicKey::from_bytes(*data.minter_public_key.as_slice())
         .context("Invalid minter public key")?;
@@ -155,7 +194,7 @@ fn prepare_mc_zerostate(
     )?;
 
     let mut total_balance = ton_block::CurrencyCollection::default();
-    for (address, account) in data.accounts {
+    for (address, account) in &data.accounts {
         match &account {
             ton_block::Account::Account(account) => {
                 total_balance
@@ -167,8 +206,8 @@ fn prepare_mc_zerostate(
 
         state
             .insert_account(
-                &address,
-                &ton_block::ShardAccount::with_params(&account, ton_types::UInt256::default(), 0)
+                address,
+                &ton_block::ShardAccount::with_params(account, UInt256::default(), 0)
                     .context("Failed to create shard account")?,
             )
             .context("Failed to insert account")?;
@@ -383,8 +422,7 @@ fn prepare_mc_zerostate(
 
     // 34
 
-    let validators = config
-        .validators_public_keys
+    let validators = validators_public_keys
         .into_iter()
         .map(|validator| {
             let public_key = ton_block::SigPubKey::from_bytes(validator.as_slice())?;
@@ -421,11 +459,7 @@ fn prepare_mc_zerostate(
 }
 
 impl ZerostateConfig {
-    pub fn add_account(
-        &mut self,
-        address: ton_types::UInt256,
-        mut account: ton_block::Account,
-    ) -> Result<()> {
+    pub fn add_account(&mut self, address: UInt256, mut account: ton_block::Account) -> Result<()> {
         if let ton_block::Account::Account(account) = &mut account {
             account.addr = ton_block::MsgAddressInt::AddrStd(ton_block::MsgAddrStd::with_address(
                 None,
@@ -441,5 +475,103 @@ impl ZerostateConfig {
         self.accounts.insert(address, account);
 
         Ok(())
+    }
+}
+
+mod config_generator {
+    use crate::dht::generate_dht_config;
+    use crate::file::{load_object_from_file, save_to_file, serialize_to_file};
+    use crate::models::global_config::{ConfigGlobal, DhtNode};
+    use crate::models::node_config::TonNodeConfig;
+    use crate::models::{Node, ValidatorsConfig};
+    use anyhow::anyhow;
+    use everscale_crypto::ed25519::{PublicKey, SecretKey};
+    use std::fs;
+    use std::net::{Ipv4Addr, SocketAddrV4};
+    use std::path::Path;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn generate_log_config(
+        log_template: &Path,
+        output: &Path,
+        base_folder: &str,
+        node_index: usize,
+    ) -> anyhow::Result<()> {
+        let log_cfg = fs::read_to_string(log_template)?;
+        let log_cfg = log_cfg.replace("{NODE_NUM}", &node_index.to_string());
+        save_to_file(&log_cfg, &output.join(base_folder).join("log_cfg.yml"))?;
+        Ok(())
+    }
+
+    fn generate_node_config(
+        node: &Node,
+        base_folder: &str,
+        output: &Path,
+        current_time_ms: u64,
+        nodes_config: &ValidatorsConfig,
+    ) -> anyhow::Result<TonNodeConfig> {
+        // Initialization node config
+        let mut node_config: TonNodeConfig =
+            load_object_from_file::<TonNodeConfig>(&nodes_config.node_config)?;
+        node_config.init_adnl(&format!("{}:{}", node.adnl_addr, node.adnl_port))?;
+        node_config.init_validator_keys(current_time_ms as i32)?;
+        serialize_to_file(&node_config, &output.join(base_folder).join("config.json"))?;
+        Ok(node_config)
+    }
+
+    fn generate_global_config(
+        node: &Node,
+        node_config: &TonNodeConfig,
+        global_config: &mut ConfigGlobal,
+    ) -> anyhow::Result<()> {
+        let node_adnl_pvt_key = node_config
+            .get_first_adnl_node_pvt_key()
+            .ok_or(anyhow!("ADNL pvt key can't be null"))?;
+        let secret_key = get_key_by_base64_private(&node_adnl_pvt_key)?;
+        let ip: Ipv4Addr = node.adnl_addr.parse()?;
+        let addr = SocketAddrV4::new(ip, node.adnl_port);
+        let dht_node = generate_dht_config(addr, &secret_key);
+        let dht_node = serde_json::from_str::<DhtNode>(&dht_node)?;
+        global_config.dht.static_nodes.nodes.push(dht_node);
+        Ok(())
+    }
+
+    pub fn build_configs(
+        validators_config: &ValidatorsConfig,
+        output: &Path,
+    ) -> anyhow::Result<(Vec<PublicKey>, ConfigGlobal)> {
+        let mut validators_pubkeys: Vec<PublicKey> = vec![];
+        let current_time_ms = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
+        let mut global_config = ConfigGlobal::default();
+        for (i, node) in validators_config.nodes.iter().enumerate() {
+            let base_folder = format!("node{i}");
+            generate_log_config(&validators_config.log_template, output, &base_folder, i)?;
+            let node_config = generate_node_config(
+                node,
+                &base_folder,
+                output,
+                current_time_ms,
+                validators_config,
+            )?;
+
+            let pvt_key = node_config
+                .get_validator_key_ring_pvt_key()?
+                .ok_or(anyhow!("validator pvt key is required for validator"))?;
+
+            let secret_key = get_key_by_base64_private(&pvt_key)?;
+            let pubkey = PublicKey::from(&secret_key);
+            validators_pubkeys.push(pubkey);
+            generate_global_config(node, &node_config, &mut global_config)?;
+        }
+
+        Ok((validators_pubkeys, global_config))
+    }
+
+    fn get_key_by_base64_private(base64_string: &str) -> anyhow::Result<SecretKey> {
+        let bytes = base64::decode(base64_string)?;
+        let mut array = [0; 32];
+        array.copy_from_slice(&bytes);
+        let secret_key = SecretKey::from_bytes(array);
+        Ok(secret_key)
     }
 }

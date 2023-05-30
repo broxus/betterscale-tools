@@ -1,10 +1,12 @@
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::str::FromStr;
 
 use anyhow::{Context, Result};
+
 use nekoton_utils::*;
 use num_bigint::BigInt;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize)]
 pub struct ZerostateConfig {
@@ -14,10 +16,32 @@ pub struct ZerostateConfig {
     pub config_public_key: ton_types::UInt256,
     #[serde(with = "serde_uint256")]
     pub minter_public_key: ton_types::UInt256,
-
     #[serde(with = "serde_account_states")]
     pub accounts: HashMap<ton_types::UInt256, ton_block::Account>,
     pub config: NetworkConfig,
+    pub validators: ValidatorsConfig,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+#[serde(rename_all = "lowercase")]
+pub enum ValidatorsConfigType {
+    Generate,
+    Static,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Node {
+    pub adnl_addr: String,
+    pub adnl_port: u16,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct ValidatorsConfig {
+    #[serde(rename = "type")]
+    pub kind: ValidatorsConfigType,
+    pub node_config: PathBuf,
+    pub log_template: PathBuf,
+    pub nodes: Vec<Node>,
 }
 
 #[derive(Deserialize)]
@@ -49,8 +73,6 @@ pub struct NetworkConfig {
     pub consensus_params: ConsensusParams,
     #[serde(with = "serde_vec_uint256")]
     pub fundamental_addresses: Vec<ton_types::UInt256>,
-    #[serde(with = "serde_vec_uint256")]
-    pub validators_public_keys: Vec<ton_types::UInt256>,
 }
 
 #[derive(Deserialize)]
@@ -675,5 +697,241 @@ impl<'de> Deserialize<'de> for StringOrNumber {
                 .map_err(|_| D::Error::custom("Invalid number")),
             Value::Number(value) => Ok(Self(value)),
         }
+    }
+}
+
+pub mod node_config {
+    pub const TAG_DHT_KEY: usize = 1;
+    pub const TAG_OVERLAY_KEY: usize = 2;
+
+    use anyhow::{anyhow, Result};
+    use everscale_crypto::ed25519::SecretKey;
+    use std::collections::HashMap;
+
+    #[derive(serde::Serialize, serde::Deserialize)]
+    pub struct TonNodeConfig {
+        #[serde(flatten)]
+        base: serde_json::Value,
+        adnl_node: Option<AdnlNodeConfigJson>,
+        validator_key_ring: Option<HashMap<String, KeyOptionJson>>,
+        validator_keys: Option<Vec<ValidatorKeysJson>>,
+    }
+
+    #[derive(serde::Deserialize, serde::Serialize, Debug)]
+    pub struct AdnlNodeConfigJson {
+        ip_address: String,
+        keys: Vec<AdnlNodeKeyJson>,
+        recv_pipeline_pool: Option<u8>,
+        recv_priority_pool: Option<u8>,
+        throughput: Option<u32>,
+    }
+
+    #[derive(serde::Serialize, serde::Deserialize, Debug)]
+    pub struct PublicKeyInfo {
+        pub public_key: String,
+        pub weight: String,
+    }
+
+    #[derive(serde::Serialize, serde::Deserialize, Debug)]
+    pub struct P34 {
+        pub utime_since: u64,
+        pub utime_until: u64,
+        pub total: u32,
+        pub main: u32,
+        pub total_weight: u32,
+        pub list: Vec<PublicKeyInfo>,
+    }
+
+    impl TonNodeConfig {
+        pub(crate) fn init_adnl(&mut self, ip_address: &str) -> Result<&mut Self> {
+            let adnl_config = AdnlNodeConfigJson::with_ip_address_and_private_key_tags(
+                ip_address,
+                vec![TAG_DHT_KEY, TAG_OVERLAY_KEY],
+            )?;
+
+            self.adnl_node = Some(adnl_config);
+            Ok(self)
+        }
+
+        pub(crate) fn init_validator_keys(&mut self, election_id: i32) -> Result<&mut Self> {
+            let secret_key = SecretKey::generate(&mut rand::thread_rng());
+            let json = KeyOptionJson::from(secret_key);
+            let binding = everscale_crypto::ed25519::PublicKey::from(&secret_key.expand());
+            let public_key_tl = binding.as_tl();
+            let key_id = tl_proto::hash(public_key_tl);
+            let key_ring = self.validator_key_ring.get_or_insert_with(HashMap::new);
+            key_ring.insert(base64::encode(key_id), json);
+            self.add_validator_key(&key_id, election_id);
+            Ok(self)
+        }
+
+        fn add_validator_key(&mut self, key_id: &[u8; 32], election_id: i32) {
+            let key_info = ValidatorKeysJson {
+                election_id,
+                validator_key_id: base64::encode(key_id),
+                validator_adnl_key_id: None,
+            };
+
+            let validator_keys = self.validator_keys.get_or_insert(Vec::new());
+            validator_keys.push(key_info)
+        }
+
+        pub(crate) fn get_first_adnl_node_pvt_key(&self) -> Option<String> {
+            self.adnl_node.as_ref()?.keys.first()?.data.pvt_key.clone()
+        }
+
+        pub(crate) fn get_validator_key_ring_pvt_key(&self) -> Result<Option<String>> {
+            let pair = self
+                .validator_key_ring
+                .as_ref()
+                .ok_or(anyhow!("validator_key_ring should be present"))?
+                .iter()
+                .next()
+                .ok_or(anyhow!("validator_key_ring pvt key should be present"))?;
+            Ok(pair.1.pvt_key.clone())
+        }
+    }
+
+    impl AdnlNodeConfigJson {
+        pub fn with_ip_address_and_private_key_tags(
+            ip_address: &str,
+            tags: Vec<usize>,
+        ) -> Result<AdnlNodeConfigJson> {
+            let mut keys = Vec::new();
+            for tag in tags {
+                let json = KeyOptionJson::from(SecretKey::generate(&mut rand::thread_rng()));
+                keys.push((json, tag))
+            }
+            Self::create_configs(ip_address, keys)
+        }
+
+        fn create_configs(
+            ip_address: &str,
+            keys: Vec<(KeyOptionJson, usize)>,
+        ) -> Result<AdnlNodeConfigJson> {
+            let mut json_keys = Vec::new();
+            for (json, tag) in keys {
+                json_keys.push(AdnlNodeKeyJson { tag, data: json });
+            }
+            let json = AdnlNodeConfigJson {
+                ip_address: ip_address.to_string(),
+                keys: json_keys,
+                recv_pipeline_pool: None,
+                recv_priority_pool: None,
+                throughput: None,
+            };
+            Ok(json)
+        }
+    }
+
+    #[derive(serde::Deserialize, serde::Serialize, Debug)]
+    pub struct AdnlNodeKeyJson {
+        tag: usize,
+        data: KeyOptionJson,
+    }
+
+    #[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+    pub struct KeyOptionJson {
+        pub type_id: i32,
+        pub pub_key: Option<String>,
+        pub pvt_key: Option<String>,
+    }
+
+    #[derive(serde::Deserialize, serde::Serialize, Clone, Debug)]
+    struct ValidatorKeysJson {
+        election_id: i32,
+        validator_key_id: String,
+        validator_adnl_key_id: Option<String>,
+    }
+    pub const KEY_TYPE: i32 = 1209251014;
+
+    impl From<SecretKey> for KeyOptionJson {
+        fn from(value: SecretKey) -> Self {
+            Self {
+                type_id: KEY_TYPE,
+                pub_key: None,
+                pvt_key: Some(base64::encode(value.to_bytes())),
+            }
+        }
+    }
+}
+
+pub mod global_config {
+    use serde::{Deserialize, Serialize};
+
+    #[derive(Debug, Serialize, Deserialize, Default)]
+    pub struct ConfigGlobal {
+        #[serde(rename = "@type")]
+        pub type_field: String,
+        pub dht: DhtConfigGlobal,
+        pub validator: ValidatorConfigGlobal,
+    }
+
+    #[derive(Debug, Serialize, Deserialize, Default)]
+    pub struct DhtConfigGlobal {
+        #[serde(rename = "@type")]
+        pub type_field: String,
+        pub k: i64,
+        pub a: i64,
+        pub static_nodes: DhtNodes,
+    }
+
+    #[derive(Debug, Serialize, Deserialize, Default)]
+    pub struct DhtNodes {
+        #[serde(rename = "@type")]
+        pub type_field: String,
+        pub nodes: Vec<DhtNode>,
+    }
+
+    #[derive(Debug, Serialize, Deserialize, Default)]
+    pub struct DhtNode {
+        #[serde(rename = "@type")]
+        pub type_field: String,
+        pub id: Id,
+        pub addr_list: AddrList,
+        pub version: i64,
+        pub signature: String,
+    }
+
+    #[derive(Debug, Serialize, Deserialize, Default)]
+    pub struct Id {
+        #[serde(rename = "@type")]
+        pub type_field: String,
+        pub key: String,
+    }
+
+    #[derive(Debug, Serialize, Deserialize, Default)]
+    pub struct AddrList {
+        #[serde(rename = "@type")]
+        pub type_field: String,
+        pub addrs: Vec<Addr>,
+        pub version: i64,
+        pub reinit_date: i64,
+        pub priority: i64,
+        pub expire_at: i64,
+    }
+
+    #[derive(Debug, Serialize, Deserialize, Default)]
+    pub struct Addr {
+        #[serde(rename = "@type")]
+        pub type_field: String,
+        pub ip: i64,
+        pub port: i64,
+    }
+
+    #[derive(Debug, Serialize, Deserialize, Default)]
+    pub struct ValidatorConfigGlobal {
+        #[serde(rename = "@type")]
+        pub type_field: String,
+        pub zero_state: ZeroState,
+    }
+
+    #[derive(Debug, Serialize, Deserialize, Default)]
+    pub struct ZeroState {
+        pub workchain: i64,
+        pub shard: i64,
+        pub seqno: i64,
+        pub root_hash: String,
+        pub file_hash: String,
     }
 }

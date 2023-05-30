@@ -21,9 +21,7 @@ use std::net::SocketAddrV4;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
-use crate::full_config::build_full_config;
-use crate::full_config::file::{load_object_from_file, save_to_file};
-use crate::full_config::models::nodes_config::NodesConfig;
+use crate::file::save_to_file;
 use anyhow::{Context, Result};
 use argh::FromArgs;
 use everscale_crypto::ed25519;
@@ -33,9 +31,7 @@ use ton_block::Serializable;
 use self::system_accounts::MultisigType;
 
 mod config;
-mod crypto;
 mod dht;
-mod full_config;
 mod mine;
 mod models;
 mod system_accounts;
@@ -58,7 +54,7 @@ async fn run(app: App) -> Result<()> {
             print!("{}", dht::generate_dht_config(args.address, &secret));
             Ok(())
         }
-        Subcommand::ConfigFull(args) => {
+        Subcommand::ZeroState(args) => {
             if !args.output.is_dir() {
                 return Err(anyhow::anyhow!("Expected `output` param to be a directory"));
             }
@@ -69,21 +65,18 @@ async fn run(app: App) -> Result<()> {
                 create_dir_all(&zerostate_folder)?;
             }
 
-            let nodes_config = load_object_from_file::<NodesConfig>(&args.nodes)?;
-            let validators_pubkeys = build_full_config(&nodes_config, &args.output)?;
-
-            let zerostate_template = std::fs::read_to_string(&nodes_config.zerostate_config.from)
-                .context("Failed to read zerostate config")?;
+            let zerostate_template =
+                std::fs::read_to_string(&args.config).context("Failed to read zerostate config")?;
 
             let zerostate_config = zerostate::prepare_zerostates(
                 &args.output,
                 &zerostate_template,
-                validators_pubkeys,
+                &zerostate_folder,
             )?;
 
             save_to_file(
                 &zerostate_config,
-                &args.output.join(&nodes_config.zerostate_config.to),
+                &zerostate_folder.join("zerostate-config.json"),
             )
             .context("Failed to save zerostates")?;
 
@@ -255,7 +248,7 @@ struct App {
 #[argh(subcommand)]
 enum Subcommand {
     DhtNode(CmdDhtNode),
-    ConfigFull(CmdConfigFull),
+    ZeroState(CmdZeroState),
     Account(CmdAccount),
     KeyPair(CmdKeyPair),
     Config(CmdConfig),
@@ -276,12 +269,12 @@ struct CmdDhtNode {
 }
 
 #[derive(Debug, PartialEq, FromArgs)]
-/// Generates full config files
-#[argh(subcommand, name = "config-full")]
-struct CmdConfigFull {
-    /// path to the nodes config
-    #[argh(option, long = "nodes", short = 'n')]
-    nodes: PathBuf,
+/// Generates zerostate boc file
+#[argh(subcommand, name = "zerostate")]
+struct CmdZeroState {
+    /// path to the zerostate config
+    #[argh(option, long = "config", short = 'c')]
+    config: PathBuf,
 
     /// destination folder path
     #[argh(option, long = "output", short = 'o')]
@@ -616,5 +609,45 @@ impl<T: FromArgs> FromArgs for ArgsOrVersion<T> {
             }
             _ => T::from_args(command_name, args).map(Self),
         }
+    }
+}
+
+pub mod file {
+    use anyhow::Result;
+    use serde::de::DeserializeOwned;
+    use serde::Serialize;
+    use std::fs;
+    use std::fs::{create_dir_all, File};
+    use std::path::Path;
+    /// Load a JSON object from a file.
+    pub(crate) fn load_object_from_file<T: DeserializeOwned>(path: &Path) -> Result<T> {
+        let file = File::open(path)?;
+        let value = serde_json::from_reader(file)?;
+        Ok(value)
+    }
+
+    /// Serialize a data structure to a JSON file.
+    pub(crate) fn serialize_to_file<T: Serialize>(data: &T, path: &Path) -> Result<()> {
+        prepare_to_save(path)?;
+        let file = File::create(path)?;
+        serde_json::to_writer_pretty(file, data)?;
+        Ok(())
+    }
+
+    /// Save a string to a file.
+    pub(crate) fn save_to_file(data: &str, path: &Path) -> Result<()> {
+        prepare_to_save(path)?;
+        fs::write(path, data)?;
+        Ok(())
+    }
+
+    /// Prepare to save to a file by creating necessary directories.
+    pub(crate) fn prepare_to_save(path: &Path) -> Result<()> {
+        if let Some(dir) = path.parent() {
+            if !dir.exists() {
+                create_dir_all(dir)?;
+            }
+        }
+        Ok(())
     }
 }
