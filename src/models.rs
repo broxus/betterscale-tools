@@ -859,7 +859,7 @@ pub mod node_config {
 pub mod global_config {
     use serde::{Deserialize, Serialize};
 
-    #[derive(Debug, Serialize, Deserialize, Default)]
+    #[derive(Debug, Serialize, Deserialize)]
     pub struct ConfigGlobal {
         #[serde(rename = "@type")]
         pub type_field: String,
@@ -867,7 +867,17 @@ pub mod global_config {
         pub validator: ValidatorConfigGlobal,
     }
 
-    #[derive(Debug, Serialize, Deserialize, Default)]
+    impl Default for ConfigGlobal {
+        fn default() -> Self {
+            Self {
+                type_field: "config.global".to_string(),
+                dht: Default::default(),
+                validator: Default::default(),
+            }
+        }
+    }
+
+    #[derive(Debug, Serialize, Deserialize)]
     pub struct DhtConfigGlobal {
         #[serde(rename = "@type")]
         pub type_field: String,
@@ -876,7 +886,26 @@ pub mod global_config {
         pub static_nodes: DhtNodes,
     }
 
-    #[derive(Debug, Serialize, Deserialize, Default)]
+    impl Default for DhtConfigGlobal {
+        fn default() -> Self {
+            Self {
+                type_field: "dht.config.global".to_string(),
+                k: 6,
+                a: 3,
+                static_nodes: Default::default(),
+            }
+        }
+    }
+
+    impl Default for DhtNodes {
+        fn default() -> Self {
+            Self {
+                type_field: "dht.nodes".to_string(),
+                nodes: vec![],
+            }
+        }
+    }
+    #[derive(Debug, Serialize, Deserialize)]
     pub struct DhtNodes {
         #[serde(rename = "@type")]
         pub type_field: String,
