@@ -120,6 +120,37 @@ async fn run(app: App) -> Result<()> {
 
                 config::set_param(args.url, &args.address, &secret, param).await
             }
+            CmdConfigSubcommand::PrepareParamMessage(args) => {
+                let secret = load_secret_key(args.sign)?;
+                let keys = ed25519::KeyPair::from(&secret);
+
+                let param: config::ParamToChange = serde_json::from_value(serde_json::json!({
+                    "param": args.param,
+                    "value": args.value,
+                }))
+                .context("Invalid config param")?;
+
+                let (message, expire_at) = config::create_message(
+                    args.seqno,
+                    &args.address,
+                    config::Action::SubmitParam(param.into_param()?),
+                    keys,
+                    args.signature_id,
+                    args.timeout,
+                )
+                .context("Failed to create action message")?;
+                let message_toc = message.write_to_bytes()?;
+
+                println!(
+                    "{}",
+                    serde_json::json!({
+                        "boc": base64::encode(message_toc),
+                        "expire_at": expire_at,
+                    })
+                );
+
+                Ok(())
+            }
             CmdConfigSubcommand::SetMasterKey(args) => {
                 let secret = load_secret_key(args.sign)?;
                 let master_key = parse_public_key(args.pubkey).context("Invalid master key")?;
@@ -155,41 +186,6 @@ async fn run(app: App) -> Result<()> {
                 };
 
                 config::set_elector_code(args.url, &args.address, &secret, code, params).await
-            }
-            CmdConfigSubcommand::ForceKeyBlock(args) => {
-                let secret = load_secret_key(args.sign)?;
-                let keys = ed25519::KeyPair::from(&secret);
-
-                let action = config::Action::SubmitParam(
-                    ton_block::ConfigParamEnum::ConfigParam15(ton_block::ConfigParam15 {
-                        validators_elected_for: 900,
-                        elections_start_before: 450,
-                        elections_end_before: 50,
-                        stake_held_for: 450,
-                    }),
-                );
-
-                let (message, expire_at) = config::create_message(
-                    args.seqno,
-                    &args.address,
-                    action,
-                    keys,
-                    args.signature_id,
-                    args.timeout,
-                )
-                .context("Failed to create message")?;
-
-                let message = ton_types::serialize_toc(&message.serialize()?)?;
-
-                println!(
-                    "{}",
-                    serde_json::json!({
-                        "boc": base64::encode(message),
-                        "expire_at": expire_at,
-                    })
-                );
-
-                Ok(())
             }
         },
         Subcommand::Mine(args) => mine::mine(
@@ -343,9 +339,9 @@ struct CmdConfig {
 enum CmdConfigSubcommand {
     Description(CmdConfigDescription),
     SetParam(CmdConfigSetParam),
+    PrepareParamMessage(CmdPrepareParamMessage),
     SetMasterKey(CmdConfigSetMasterKey),
     UpdateElector(CmdConfigUpdateElector),
-    ForceKeyBlock(CmdConfigForceKeyBlock),
 }
 
 #[derive(Debug, PartialEq, FromArgs)]
@@ -374,6 +370,43 @@ struct CmdConfigSetParam {
     #[argh(option, long = "sign", short = 's')]
     sign: PathBuf,
 
+    /// param name
+    #[argh(positional)]
+    param: String,
+
+    /// param value
+    #[argh(positional)]
+    value: serde_json::Value,
+}
+
+#[derive(Debug, PartialEq, FromArgs)]
+/// Execute an action to change a config param
+#[argh(subcommand, name = "prepareParamMessage")]
+struct CmdPrepareParamMessage {
+    /// config address
+    #[argh(
+        option,
+        long = "address",
+        short = 'a',
+        default = "default_config_address()"
+    )]
+    address: ton_block::MsgAddressInt,
+
+    /// config state seqno
+    #[argh(option, default = "0")]
+    seqno: u32,
+
+    /// path to the file with keys
+    #[argh(option, long = "sign", short = 's')]
+    sign: PathBuf,
+
+    /// optional signature id
+    #[argh(option)]
+    signature_id: Option<i32>,
+
+    /// message expiration timeout
+    #[argh(option, default = "60")]
+    timeout: u32,
     /// param name
     #[argh(positional)]
     param: String,
@@ -438,36 +471,6 @@ struct CmdConfigUpdateElector {
     /// path to the code or empty for input from stdin
     #[argh(positional)]
     code: Option<String>,
-}
-
-#[derive(Debug, PartialEq, FromArgs)]
-/// Nop update config
-#[argh(subcommand, name = "forceKeyBlock")]
-struct CmdConfigForceKeyBlock {
-    /// config address
-    #[argh(
-        option,
-        long = "address",
-        short = 'a',
-        default = "default_config_address()"
-    )]
-    address: ton_block::MsgAddressInt,
-
-    /// config state seqno
-    #[argh(option, default = "0")]
-    seqno: u32,
-
-    /// path to the file with keys
-    #[argh(option, long = "sign", short = 's')]
-    sign: PathBuf,
-
-    /// optional signature id
-    #[argh(option)]
-    signature_id: Option<i32>,
-
-    /// message expiration timeout
-    #[argh(option, default = "60")]
-    timeout: u32,
 }
 
 #[derive(Debug, PartialEq, FromArgs)]
