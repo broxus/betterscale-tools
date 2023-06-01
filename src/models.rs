@@ -41,7 +41,7 @@ pub struct ValidatorsConfig {
     pub kind: ValidatorsConfigType,
     pub node_config: PathBuf,
     pub log_template: PathBuf,
-    pub nodes: Vec<Node>,
+    pub nodes: HashMap<String, Node>,
 }
 
 #[derive(Deserialize)]

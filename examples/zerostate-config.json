@@ -219,20 +219,19 @@
     "type": "generate",
     "node_config": "./examples/node-config.json",
     "log_template": "./examples/log_cfg.yml",
-    "nodes":
-    [
-      {
+    "nodes": {
+      "node0": {
         "adnl_addr": "0.0.0.0",
         "adnl_port": 4000
       },
-      {
+      "node1": {
         "adnl_addr": "0.0.0.0",
         "adnl_port": 4001
       },
-      {
+      "nosdde2": {
         "adnl_addr": "0.0.0.0",
         "adnl_port": 4002
       }
-    ]
+    }
   }
 }

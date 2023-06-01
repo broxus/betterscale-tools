@@ -143,11 +143,11 @@ pub fn prepare_zerostates<P: AsRef<Path>>(
                 serde_json::from_value::<ValidatorConfigGlobal>(json.clone())?;
             global_config.validator = validator_config_global;
 
-            for (i, _) in validators_config.nodes.iter().enumerate() {
-                let base_folder = format!("node{i}");
+            for node in validators_config.nodes.iter() {
                 let path = &path
                     .as_ref()
-                    .join(base_folder)
+                    .join("nodes")
+                    .join(node.0)
                     .join("ton-global.config.json");
 
                 serialize_to_file(&global_config, path)?;
@@ -494,18 +494,20 @@ mod config_generator {
     fn generate_log_config(
         log_template: &Path,
         output: &Path,
-        base_folder: &str,
-        node_index: usize,
+        node_name: &str,
     ) -> anyhow::Result<()> {
         let log_cfg = fs::read_to_string(log_template)?;
-        let log_cfg = log_cfg.replace("{NODE_NUM}", &node_index.to_string());
-        save_to_file(&log_cfg, &output.join(base_folder).join("log_cfg.yml"))?;
+        let log_cfg = log_cfg.replace("{NODE_NAME}", node_name);
+        save_to_file(
+            &log_cfg,
+            &output.join("nodes").join(node_name).join("log_cfg.yml"),
+        )?;
         Ok(())
     }
 
     fn generate_node_config(
         node: &Node,
-        base_folder: &str,
+        node_name: &str,
         output: &Path,
         current_time_ms: u64,
         nodes_config: &ValidatorsConfig,
@@ -515,7 +517,10 @@ mod config_generator {
             load_object_from_file::<TonNodeConfig>(&nodes_config.node_config)?;
         node_config.init_adnl(&format!("{}:{}", node.adnl_addr, node.adnl_port))?;
         node_config.init_validator_keys(current_time_ms as i32)?;
-        serialize_to_file(&node_config, &output.join(base_folder).join("config.json"))?;
+        serialize_to_file(
+            &node_config,
+            &output.join("nodes").join(node_name).join("config.json"),
+        )?;
         Ok(node_config)
     }
 
@@ -543,16 +548,10 @@ mod config_generator {
         let mut validators_pubkeys: Vec<PublicKey> = vec![];
         let current_time_ms = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
         let mut global_config = ConfigGlobal::default();
-        for (i, node) in validators_config.nodes.iter().enumerate() {
-            let base_folder = format!("node{i}");
-            generate_log_config(&validators_config.log_template, output, &base_folder, i)?;
-            let node_config = generate_node_config(
-                node,
-                &base_folder,
-                output,
-                current_time_ms,
-                validators_config,
-            )?;
+        for node in validators_config.nodes.iter() {
+            generate_log_config(&validators_config.log_template, output, node.0)?;
+            let node_config =
+                generate_node_config(node.1, node.0, output, current_time_ms, validators_config)?;
 
             let pvt_key = node_config
                 .get_validator_key_ring_pvt_key()?
@@ -561,7 +560,7 @@ mod config_generator {
             let secret_key = get_key_by_base64_private(&pvt_key)?;
             let pubkey = PublicKey::from(&secret_key);
             validators_pubkeys.push(pubkey);
-            generate_global_config(node, &node_config, &mut global_config)?;
+            generate_global_config(node.1, &node_config, &mut global_config)?;
         }
 
         Ok((validators_pubkeys, global_config))
