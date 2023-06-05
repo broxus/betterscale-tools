@@ -118,17 +118,15 @@ async fn run(app: App) -> Result<()> {
                 }))
                 .context("Invalid config param")?;
 
-                config::set_param(args.url, &args.address, &secret, param).await
-            }
-            CmdConfigSubcommand::PrepareParamMessage(args) => {
-                let secret = load_secret_key(args.sign)?;
-                let keys = ed25519::KeyPair::from(&secret);
+                if !args.offline {
+                    return if let Some(url) = args.url {
+                        config::set_param(url, &args.address, &secret, param, args.timeout).await
+                    } else {
+                        Err(anyhow::Error::msg("Url can not be empty"))
+                    };
+                }
 
-                let param: config::ParamToChange = serde_json::from_value(serde_json::json!({
-                    "param": args.param,
-                    "value": args.value,
-                }))
-                .context("Invalid config param")?;
+                let keys = ed25519::KeyPair::from(&secret);
 
                 let (message, expire_at) = config::create_message(
                     args.seqno,
@@ -155,7 +153,8 @@ async fn run(app: App) -> Result<()> {
                 let secret = load_secret_key(args.sign)?;
                 let master_key = parse_public_key(args.pubkey).context("Invalid master key")?;
 
-                config::set_master_key(args.url, &args.address, &secret, master_key).await
+                config::set_master_key(args.url, &args.address, &secret, master_key, args.timeout)
+                    .await
             }
             CmdConfigSubcommand::UpdateElector(args) => {
                 let secret = load_secret_key(args.sign)?;
@@ -185,7 +184,15 @@ async fn run(app: App) -> Result<()> {
                     None => None,
                 };
 
-                config::set_elector_code(args.url, &args.address, &secret, code, params).await
+                config::set_elector_code(
+                    args.url,
+                    &args.address,
+                    &secret,
+                    code,
+                    params,
+                    args.timeout,
+                )
+                .await
             }
         },
         Subcommand::Mine(args) => mine::mine(
@@ -339,7 +346,6 @@ struct CmdConfig {
 enum CmdConfigSubcommand {
     Description(CmdConfigDescription),
     SetParam(CmdConfigSetParam),
-    PrepareParamMessage(CmdPrepareParamMessage),
     SetMasterKey(CmdConfigSetMasterKey),
     UpdateElector(CmdConfigUpdateElector),
 }
@@ -364,33 +370,7 @@ struct CmdConfigSetParam {
 
     /// gql or jrpc endpoint address
     #[argh(option, long = "url")]
-    url: String,
-
-    /// path to the file with keys
-    #[argh(option, long = "sign", short = 's')]
-    sign: PathBuf,
-
-    /// param name
-    #[argh(positional)]
-    param: String,
-
-    /// param value
-    #[argh(positional)]
-    value: serde_json::Value,
-}
-
-#[derive(Debug, PartialEq, FromArgs)]
-/// Execute an action to change a config param
-#[argh(subcommand, name = "prepareParamMessage")]
-struct CmdPrepareParamMessage {
-    /// config address
-    #[argh(
-        option,
-        long = "address",
-        short = 'a',
-        default = "default_config_address()"
-    )]
-    address: ton_block::MsgAddressInt,
+    url: Option<String>,
 
     /// config state seqno
     #[argh(option, default = "0")]
@@ -407,6 +387,11 @@ struct CmdPrepareParamMessage {
     /// message expiration timeout
     #[argh(option, default = "60")]
     timeout: u32,
+
+    /// message expiration timeout
+    #[argh(option, default = "false")]
+    offline: bool,
+
     /// param name
     #[argh(positional)]
     param: String,
@@ -440,6 +425,10 @@ struct CmdConfigSetMasterKey {
     /// new master public key
     #[argh(positional)]
     pubkey: String,
+
+    /// message expiration timeout
+    #[argh(option, default = "60")]
+    timeout: u32,
 }
 
 #[derive(Debug, PartialEq, FromArgs)]
@@ -471,6 +460,10 @@ struct CmdConfigUpdateElector {
     /// path to the code or empty for input from stdin
     #[argh(positional)]
     code: Option<String>,
+
+    /// message expiration timeout
+    #[argh(option, default = "60")]
+    timeout: u32,
 }
 
 #[derive(Debug, PartialEq, FromArgs)]

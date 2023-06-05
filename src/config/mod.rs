@@ -25,10 +25,11 @@ pub async fn set_param(
     config: &ton_block::MsgAddressInt,
     secret: &ed25519::SecretKey,
     param: ParamToChange,
+    timeout: u32,
 ) -> Result<()> {
     ConfigContract::subscribe(url, config)
         .await?
-        .execute_action(secret, Action::SubmitParam(param.into_param()?))
+        .execute_action(secret, Action::SubmitParam(param.into_param()?), timeout)
         .await
 }
 
@@ -37,10 +38,11 @@ pub async fn set_master_key(
     config: &ton_block::MsgAddressInt,
     secret: &ed25519::SecretKey,
     master_key: ed25519::PublicKey,
+    timeout: u32,
 ) -> Result<()> {
     ConfigContract::subscribe(url, config)
         .await?
-        .execute_action(secret, Action::UpdateMasterKey(master_key))
+        .execute_action(secret, Action::UpdateMasterKey(master_key), timeout)
         .await
 }
 
@@ -50,10 +52,11 @@ pub async fn set_elector_code(
     secret: &ed25519::SecretKey,
     code: ton_types::Cell,
     params: Option<ton_types::SliceData>,
+    timeout: u32,
 ) -> Result<()> {
     ConfigContract::subscribe(url, config)
         .await?
-        .execute_action(secret, Action::UpdateElectorCode { code, params })
+        .execute_action(secret, Action::UpdateElectorCode { code, params }, timeout)
         .await
 }
 
@@ -200,7 +203,12 @@ impl ConfigContract {
         })
     }
 
-    async fn execute_action(&self, secret: &ed25519::SecretKey, action: Action) -> Result<()> {
+    async fn execute_action(
+        &self,
+        secret: &ed25519::SecretKey,
+        action: Action,
+        timeout: u32,
+    ) -> Result<()> {
         let signature_id = self
             .transport
             .get_capabilities(&SimpleClock)
@@ -218,7 +226,7 @@ impl ConfigContract {
             action,
             ed25519::KeyPair::from(secret),
             signature_id,
-            60,
+            timeout,
         )
         .context("Failed to create action message")?;
 
