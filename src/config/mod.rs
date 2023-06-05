@@ -16,7 +16,7 @@ use nekoton_utils::{SimpleClock, TrustMe};
 use serde::Deserialize;
 use tokio::sync::oneshot;
 use ton_block::{ConfigParamEnum, Serializable};
-use ton_types::IBitstring;
+use ton_types::{BuilderData, Cell, IBitstring, SliceData};
 
 use crate::models::*;
 
@@ -50,8 +50,8 @@ pub async fn set_elector_code(
     url: String,
     config: &ton_block::MsgAddressInt,
     secret: &ed25519::SecretKey,
-    code: ton_types::Cell,
-    params: Option<ton_types::SliceData>,
+    code: Cell,
+    params: Option<SliceData>,
     timeout: u32,
 ) -> Result<()> {
     ConfigContract::subscribe(url, config)
@@ -264,8 +264,9 @@ impl ConfigContract {
             ton_block::AccountState::AccountActive { state_init, .. } => state_init.data,
             _ => None,
         }
-        .ok_or(ConfigError::InvalidState)?
-        .into();
+        .map(SliceData::load_cell)
+        .transpose()?
+        .ok_or(ConfigError::InvalidState)?;
 
         let seqno = data.get_next_u32().context("Failed to get seqno")?;
         if let Some(required_public) = required_public {
@@ -321,7 +322,7 @@ pub fn create_message(
         .as_secs() as u32;
     let expire_at = now + timeout;
 
-    let mut builder = ton_types::BuilderData::new();
+    let mut builder = BuilderData::new();
     builder
         .append_u32(action)? // action
         .append_u32(seqno)? // msg_seqno
@@ -348,7 +349,7 @@ pub fn create_message(
             dst: address.clone(),
             ..Default::default()
         });
-    message.set_body(builder.into());
+    message.set_body(SliceData::load_builder(builder)?);
 
     Ok((message, expire_at))
 }
@@ -378,7 +379,7 @@ pub enum Action {
 
     /// Config contract code
     #[allow(unused)]
-    UpdateConfigCode(ton_types::Cell),
+    UpdateConfigCode(Cell),
 
     /// New config public key
     UpdateMasterKey(ed25519::PublicKey),
@@ -386,14 +387,14 @@ pub enum Action {
     /// First ref is elector code.
     /// Remaining data is passed to `after_code_upgrade`
     UpdateElectorCode {
-        code: ton_types::Cell,
-        params: Option<ton_types::SliceData>,
+        code: Cell,
+        params: Option<SliceData>,
     },
 }
 
 impl Action {
-    fn build(self) -> Result<(u32, ton_types::BuilderData)> {
-        let mut data = ton_types::BuilderData::new();
+    fn build(self) -> Result<(u32, BuilderData)> {
+        let mut data = BuilderData::new();
 
         Ok(match self {
             Self::SubmitParam(param) => {
@@ -402,7 +403,7 @@ impl Action {
                 (0x43665021, data)
             }
             Self::UpdateConfigCode(code) => {
-                data.append_reference_cell(code);
+                data.checked_append_reference(code)?;
                 (0x4e436f64, data)
             }
             Self::UpdateMasterKey(key) => {
@@ -410,9 +411,9 @@ impl Action {
                 (0x50624b21, data)
             }
             Self::UpdateElectorCode { code, params } => {
-                data.append_reference_cell(code);
+                data.checked_append_reference(code)?;
                 if let Some(params) = params {
-                    data.append_builder(&ton_types::BuilderData::from_slice(&params))?;
+                    data.append_builder(&BuilderData::from_slice(&params))?;
                 }
                 (0x4e43ef05, data)
             }
