@@ -632,7 +632,7 @@ mod serde_account_states {
         let map = HashMap::<String, String>::deserialize(deserializer)?;
         map.into_iter()
             .map(|(key, value)| {
-                let address = ton_types::UInt256::from_str(&key).map_err(D::Error::custom)?;
+                let address = ton_block::MsgAddressInt::from_str(&key).map_err(D::Error::custom)?;
 
                 let mut state =
                     ton_block::Account::construct_from_base64(&value).map_err(D::Error::custom)?;
@@ -641,10 +641,13 @@ mod serde_account_states {
                     stuff.addr =
                         ton_block::MsgAddressInt::AddrStd(ton_block::MsgAddrStd::with_address(
                             None,
-                            ton_block::MASTERCHAIN_ID as i8,
-                            address.into(),
+                            address.workchain_id() as i8,
+                            address.address(),
                         ));
                 }
+
+                let address =
+                    ton_types::UInt256::from_be_bytes(&address.address().get_bytestring(0));
 
                 Ok((address, state))
             })
