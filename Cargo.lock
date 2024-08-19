@@ -20,13 +20,15 @@ dependencies = [
 
 [[package]]
 name = "ahash"
-version = "0.7.6"
+version = "0.8.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fcb51a0695d8f838b1ee009b3fbf66bda078cd64590202a864a8f3e8c4315c47"
+checksum = "e89da841a80418a9b391ebaea17f5c112ffaaa96f621d2c285b5174da76b9011"
 dependencies = [
+ "cfg-if",
  "getrandom",
  "once_cell",
  "version_check",
+ "zerocopy",
 ]
 
 [[package]]
@@ -99,7 +101,7 @@ checksum = "b9ccdd8f2a161be9bd5c023df56f1b2a0bd1d83872ae53b71a84a12c9bf6e842"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.18",
+ "syn 2.0.75",
 ]
 
 [[package]]
@@ -365,7 +367,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "907076dfda823b0b36d2a1bb5f90c96660a5bbcd7729e10727f07858f22c4edc"
 dependencies = [
  "cfg-if",
- "hashbrown",
+ "hashbrown 0.12.3",
  "lock_api",
  "once_cell",
  "parking_lot_core",
@@ -466,6 +468,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "equivalent"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5443807d6dff69373d433ab9ef5378ad8df50ca6298caf15de6e52e24aaf54d5"
+
+[[package]]
 name = "erased-serde"
 version = "0.3.25"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -536,7 +544,7 @@ checksum = "89ca545a94061b6365f2c7355b4b32bd20df3ff95f02da9329b34ccc3bd6ee72"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.18",
+ "syn 2.0.75",
 ]
 
 [[package]]
@@ -610,9 +618,12 @@ name = "hashbrown"
 version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a9ee70c43aaf417c914396645a0fa852624801b24ebb7ae78fe8272889ac888"
-dependencies = [
- "ahash",
-]
+
+[[package]]
+name = "hashbrown"
+version = "0.14.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e5274423e17b7c9fc20b6e7e208532f9b19825d82dfd615708b70edd83df41f1"
 
 [[package]]
 name = "hermit-abi"
@@ -763,7 +774,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bd070e393353796e801d209ad339e89596eb4c8d430d18ede6a1cced8fafbd99"
 dependencies = [
  "autocfg",
- "hashbrown",
+ "hashbrown 0.12.3",
 ]
 
 [[package]]
@@ -780,6 +791,15 @@ name = "ipnet"
 version = "2.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "12b6ee2129af8d4fb011108c73d99a1b83a85977f23b82460c0ae2e25bb4b57f"
+
+[[package]]
+name = "itertools"
+version = "0.10.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b0fd2260e829bddf4cb6ea802289de2f86d6a7a690192fbe91b3f46e0f2c8473"
+dependencies = [
+ "either",
+]
 
 [[package]]
 name = "itoa"
@@ -869,15 +889,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "518ef76f2f87365916b142844c16d8fefd85039bc5699050210a7778ee1cd1de"
 
 [[package]]
-name = "lru"
-version = "0.8.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b6e8aaa3f231bb4bd57b84b2d5dc3ae7f350265df8aa96492e0bc394a1571909"
-dependencies = [
- "hashbrown",
-]
-
-[[package]]
 name = "memchr"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -917,8 +928,8 @@ dependencies = [
 
 [[package]]
 name = "nekoton"
-version = "0.13.0"
-source = "git+https://github.com/broxus/nekoton.git#2adcf367ac8d2c6ab04ad35a8bc345b1f9c0d634"
+version = "0.13.1"
+source = "git+https://github.com/broxus/nekoton.git#63e4dfc50fd577b95b44110f717d9d32c2404e83"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -934,7 +945,6 @@ dependencies = [
  "hex",
  "hmac 0.11.0",
  "log",
- "lru",
  "nekoton-abi",
  "nekoton-contracts",
  "nekoton-utils",
@@ -942,6 +952,7 @@ dependencies = [
  "once_cell",
  "parking_lot",
  "pbkdf2",
+ "quick_cache",
  "rand",
  "secstr",
  "serde",
@@ -962,7 +973,7 @@ dependencies = [
 [[package]]
 name = "nekoton-abi"
 version = "0.13.0"
-source = "git+https://github.com/broxus/nekoton.git#2adcf367ac8d2c6ab04ad35a8bc345b1f9c0d634"
+source = "git+https://github.com/broxus/nekoton.git#63e4dfc50fd577b95b44110f717d9d32c2404e83"
 dependencies = [
  "anyhow",
  "base64 0.13.1",
@@ -989,11 +1000,13 @@ dependencies = [
 [[package]]
 name = "nekoton-contracts"
 version = "0.13.0"
-source = "git+https://github.com/broxus/nekoton.git#2adcf367ac8d2c6ab04ad35a8bc345b1f9c0d634"
+source = "git+https://github.com/broxus/nekoton.git#63e4dfc50fd577b95b44110f717d9d32c2404e83"
 dependencies = [
  "anyhow",
  "nekoton-abi",
+ "nekoton-utils",
  "once_cell",
+ "serde",
  "thiserror",
  "ton_abi",
  "ton_block",
@@ -1003,7 +1016,7 @@ dependencies = [
 [[package]]
 name = "nekoton-derive"
 version = "0.13.0"
-source = "git+https://github.com/broxus/nekoton.git#2adcf367ac8d2c6ab04ad35a8bc345b1f9c0d634"
+source = "git+https://github.com/broxus/nekoton.git#63e4dfc50fd577b95b44110f717d9d32c2404e83"
 dependencies = [
  "either",
  "proc-macro2",
@@ -1012,15 +1025,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "nekoton-proto"
+version = "0.1.0"
+source = "git+https://github.com/broxus/nekoton.git#63e4dfc50fd577b95b44110f717d9d32c2404e83"
+dependencies = [
+ "anyhow",
+ "nekoton-abi",
+ "prost",
+ "ton_block",
+ "ton_types",
+]
+
+[[package]]
 name = "nekoton-transport"
 version = "0.13.0"
-source = "git+https://github.com/broxus/nekoton.git#2adcf367ac8d2c6ab04ad35a8bc345b1f9c0d634"
+source = "git+https://github.com/broxus/nekoton.git#63e4dfc50fd577b95b44110f717d9d32c2404e83"
 dependencies = [
  "anyhow",
  "async-trait",
  "futures-util",
  "log",
  "nekoton",
+ "nekoton-proto",
  "nekoton-utils",
  "reqwest",
  "serde",
@@ -1031,7 +1057,7 @@ dependencies = [
 [[package]]
 name = "nekoton-utils"
 version = "0.13.0"
-source = "git+https://github.com/broxus/nekoton.git#2adcf367ac8d2c6ab04ad35a8bc345b1f9c0d634"
+source = "git+https://github.com/broxus/nekoton.git#63e4dfc50fd577b95b44110f717d9d32c2404e83"
 dependencies = [
  "anyhow",
  "base64 0.13.1",
@@ -1149,9 +1175,9 @@ dependencies = [
 
 [[package]]
 name = "once_cell"
-version = "1.17.2"
+version = "1.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9670a07f94779e00908f3e686eab508878ebb390ba6e604d3a284c00e8d0487b"
+checksum = "3fdb12b2476b595f9358c5161aa467c2438859caa136dec86c26fdd2efe17b92"
 dependencies = [
  "parking_lot_core",
 ]
@@ -1244,7 +1270,7 @@ dependencies = [
  "pest_meta",
  "proc-macro2",
  "quote",
- "syn 2.0.18",
+ "syn 2.0.75",
 ]
 
 [[package]]
@@ -1289,18 +1315,53 @@ checksum = "5b40af805b3121feab8a3c29f04d8ad262fa8e0561883e7653e024ae4479e6de"
 
 [[package]]
 name = "proc-macro2"
-version = "1.0.59"
+version = "1.0.86"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6aeca18b86b413c660b781aa319e4e2648a3e6f9eadc9b47e9038e6fe9f3451b"
+checksum = "5e719e8df665df0d1c8fbfd238015744736151d4445ec0836b8e628aae103b77"
 dependencies = [
  "unicode-ident",
 ]
 
 [[package]]
-name = "quote"
-version = "1.0.28"
+name = "prost"
+version = "0.11.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1b9ab9c7eadfd8df19006f1cf1a4aed13540ed5cbc047010ece5826e10825488"
+checksum = "0b82eaa1d779e9a4bc1c3217db8ffbeabaae1dca241bf70183242128d48681cd"
+dependencies = [
+ "bytes",
+ "prost-derive",
+]
+
+[[package]]
+name = "prost-derive"
+version = "0.11.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e5d2d8d10f3c6ded6da8b05b5fb3b8a5082514344d56c9f871412d29b4e075b4"
+dependencies = [
+ "anyhow",
+ "itertools",
+ "proc-macro2",
+ "quote",
+ "syn 1.0.109",
+]
+
+[[package]]
+name = "quick_cache"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4a4b807ec70346b4fac3c13ae967634237847d49871f623fe0d455403346bad4"
+dependencies = [
+ "ahash",
+ "equivalent",
+ "hashbrown 0.14.5",
+ "parking_lot",
+]
+
+[[package]]
+name = "quote"
+version = "1.0.36"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0fa76aaf39101c457836aec0ce2316dbdc3ab723cdda1c6bd4e6ad4208acaca7"
 dependencies = [
  "proc-macro2",
 ]
@@ -1503,22 +1564,22 @@ checksum = "bebd363326d05ec3e2f532ab7660680f3b02130d780c299bca73469d521bc0ed"
 
 [[package]]
 name = "serde"
-version = "1.0.163"
+version = "1.0.208"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2113ab51b87a539ae008b5c6c02dc020ffa39afd2d83cffcb3f4eb2722cebec2"
+checksum = "cff085d2cb684faa248efb494c39b68e522822ac0de72ccf08109abde717cfb2"
 dependencies = [
  "serde_derive",
 ]
 
 [[package]]
 name = "serde_derive"
-version = "1.0.163"
+version = "1.0.208"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8c805777e3930c8883389c602315a24224bcc738b63905ef87cd1420353ea93e"
+checksum = "24008e81ff7613ed8e5ba0cfaf24e2c2f1e5b8a0495711e44fcd4882fca62bcf"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.18",
+ "syn 2.0.75",
 ]
 
 [[package]]
@@ -1639,9 +1700,9 @@ dependencies = [
 
 [[package]]
 name = "syn"
-version = "2.0.18"
+version = "2.0.75"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "32d41677bcbe24c20c52e7c70b0d8db04134c5d1066bf98662e2871ad200ea3e"
+checksum = "f6af063034fc1935ede7be0122941bafa9bacb949334d090b77ca98b5817c7d9"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1674,7 +1735,7 @@ checksum = "f9456a42c5b0d803c8cd86e73dd7cc9edd429499f37a3550d286d5e86720569f"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.18",
+ "syn 2.0.75",
 ]
 
 [[package]]
@@ -1799,7 +1860,7 @@ checksum = "630bdcf245f78637c13ec01ffae6187cca34625e8c63150d424b59e55af2675e"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.18",
+ "syn 2.0.75",
 ]
 
 [[package]]
@@ -1850,8 +1911,8 @@ dependencies = [
 
 [[package]]
 name = "ton_block"
-version = "1.7.14"
-source = "git+https://github.com/broxus/ton-labs-block.git#faae868dc91f56265d60f44bbcb9dab5d01e7198"
+version = "1.9.73"
+source = "git+https://github.com/broxus/ton-labs-block.git#5c4e4f84cebaf34254fd97523d1fc83d7fbe2d91"
 dependencies = [
  "anyhow",
  "base64 0.13.1",
@@ -1873,7 +1934,7 @@ dependencies = [
 [[package]]
 name = "ton_executor"
 version = "1.15.54"
-source = "git+https://github.com/broxus/ton-labs-executor.git#01f7a017c25fed1413863c2dac570553fa000bdd"
+source = "git+https://github.com/broxus/ton-labs-executor.git#2a38890d53f9c3dad84b3fb9a58e3bb62ba20f44"
 dependencies = [
  "anyhow",
  "log",
@@ -1886,7 +1947,7 @@ dependencies = [
 [[package]]
 name = "ton_types"
 version = "1.10.2"
-source = "git+https://github.com/broxus/ton-labs-types.git#bb5ea019fb95def471b2e35c1d6d4f15a0d8fe61"
+source = "git+https://github.com/broxus/ton-labs-types.git#3324562d7ff1ebec66d996128573966c1b53862b"
 dependencies = [
  "anyhow",
  "base64 0.13.1",
@@ -1908,7 +1969,7 @@ dependencies = [
 [[package]]
 name = "ton_vm"
 version = "1.8.29"
-source = "git+https://github.com/broxus/ton-labs-vm.git#497865fb3aabf02afea610f9c16f265b492c23a6"
+source = "git+https://github.com/broxus/ton-labs-vm.git#41a85bcde18bc524c18448ffc6aea35aa383c54a"
 dependencies = [
  "anyhow",
  "ed25519",
@@ -2061,7 +2122,7 @@ dependencies = [
  "once_cell",
  "proc-macro2",
  "quote",
- "syn 2.0.18",
+ "syn 2.0.75",
  "wasm-bindgen-shared",
 ]
 
@@ -2095,7 +2156,7 @@ checksum = "e128beba882dd1eb6200e1dc92ae6c5dbaa4311aa7bb211ca035779e5efc39f8"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.18",
+ "syn 2.0.75",
  "wasm-bindgen-backend",
  "wasm-bindgen-shared",
 ]
@@ -2308,6 +2369,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "zerocopy"
+version = "0.7.35"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1b9b4fd18abc82b8136838da5d50bae7bdea537c574d8dc1a34ed098d6c166f0"
+dependencies = [
+ "zerocopy-derive",
+]
+
+[[package]]
+name = "zerocopy-derive"
+version = "0.7.35"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fa4f8080344d4671fb4e831a13ad1e68092748387dfc4f55e356242fae12ce3e"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.75",
+]
+
+[[package]]
 name = "zeroize"
 version = "1.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2324,5 +2405,5 @@ checksum = "ce36e65b0d2999d2aafac989fb249189a141aee1f53c612c1f37d72631959f69"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.18",
+ "syn 2.0.75",
 ]
