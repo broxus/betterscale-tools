@@ -9,7 +9,14 @@ use nekoton_utils::TrustMe;
 use rand::distributions::Distribution;
 use ton_block::{Deserializable, Serializable};
 use ton_types::SliceData;
+pub mod jeton_utils;
+pub mod mine_jeton;
 
+pub struct JetonConfig {
+    jeton_wallet_code: &'static dyn AsRef<Path>,
+    jeton_init_params: Vec<String>,
+    jeton_init_data: Vec<String>,
+}
 pub fn mine(
     tvc: impl AsRef<Path>,
     abi: impl AsRef<Path>,
@@ -18,6 +25,7 @@ pub fn mine(
     pubkey: ed25519::PublicKey,
     target: ton_block::MsgAddressInt,
     token_root: Option<ton_block::MsgAddressInt>,
+    jeton_config: Option<JetonConfig>,
 ) -> Result<()> {
     let bytes = std::fs::read(tvc)?;
     let tvc = ton_block::StateInit::construct_from_bytes(&bytes).context("Failed to read TVC")?;
@@ -143,7 +151,10 @@ pub fn mine(
 
                     Some(token_wallet)
                 } else {
-                    None
+                    if let Some(jeton_config) = jeton_config {
+                    } else {
+                        None
+                    }
                 };
 
                 if address_affinity <= max_affinity {

@@ -201,6 +201,19 @@ async fn run(app: App) -> Result<()> {
             args.target,
             args.token_root,
         ),
+        Subcommand::MineJeton(args) => mine::mine_jeton::mine_jeton_wallet_address(
+            args.artifacts,
+            args.jeton_init_params,
+            args.jeton_init_values,
+            args.target,
+            args.nonce_idx,
+            args.min_affinity,
+        ),
+        Subcommand::AddressFromInitData(args) => mine::mine_jeton::get_address_from_init_data(
+            args.artifacts,
+            args.jeton_init_params,
+            args.jeton_init_values,
+        ),
     }
 }
 
@@ -221,6 +234,8 @@ enum Subcommand {
     KeyPair(CmdKeyPair),
     Config(CmdConfig),
     Mine(CmdMine),
+    MineJeton(CmdMineJeton),
+    AddressFromInitData(CmdAddressFromInitData),
 }
 
 #[derive(Debug, PartialEq, FromArgs)]
@@ -501,6 +516,52 @@ struct CmdMine {
     /// also mine token address
     #[argh(option, long = "token-root")]
     token_root: Option<ton_block::MsgAddressInt>,
+}
+
+#[derive(Debug, PartialEq, FromArgs)]
+/// Generates required address for the contract
+#[argh(subcommand, name = "mine-jeton")]
+struct CmdMineJeton {
+    /// path to the TVC file
+    #[argh(option, long = "artifacts")]
+    artifacts: PathBuf,
+
+    /// path to the ABI file
+    #[argh(option, long = "params")]
+    jeton_init_params: Vec<String>,
+
+    /// path to the ABI file
+    #[argh(option, long = "values")]
+    jeton_init_values: Vec<String>,
+
+    /// target address
+    #[argh(option, long = "target")]
+    target: ton_block::MsgAddressInt,
+
+    /// nonce idx
+    #[argh(option, long = "nonce-idx")]
+    nonce_idx: usize,
+
+    /// min affinity
+    #[argh(option, long = "min-affinity")]
+    min_affinity: Option<u8>,
+}
+
+#[derive(Debug, PartialEq, FromArgs)]
+/// Generates required address for the contract
+#[argh(subcommand, name = "get-address")]
+struct CmdAddressFromInitData {
+    /// path to the TVC file
+    #[argh(option, long = "artifacts")]
+    artifacts: PathBuf,
+
+    /// path to the ABI file
+    #[argh(option, long = "params")]
+    jeton_init_params: Vec<String>,
+
+    /// path to the ABI file
+    #[argh(option, long = "values")]
+    jeton_init_values: Vec<String>,
 }
 
 fn default_config_address() -> ton_block::MsgAddressInt {
