@@ -9,6 +9,7 @@ use everscale_crypto::ed25519;
 use nekoton_utils::*;
 use ton_block::Serializable;
 
+use self::mine::mine_jeton::JetonConfig;
 use self::system_accounts::MultisigType;
 
 mod config;
@@ -200,15 +201,16 @@ async fn run(app: App) -> Result<()> {
             parse_public_key(&args.pubkey).context("Invalid pubkey")?,
             args.target,
             args.token_root,
+            args.jeton.and_then(|params| {
+                Some(JetonConfig {
+                    init_data: params.jeton_init_values,
+                    init_params: params.jeton_init_params,
+                    nonce_address_idx: params.address_owner_idx,
+                    wallet_code: Box::new(params.artifacts.clone()),
+                })
+            }),
         ),
-        Subcommand::MineJeton(args) => mine::mine_jeton::mine_jeton_wallet_address(
-            args.artifacts,
-            args.jeton_init_params,
-            args.jeton_init_values,
-            args.target,
-            args.nonce_idx,
-            args.min_affinity,
-        ),
+
         Subcommand::AddressFromInitData(args) => mine::mine_jeton::get_address_from_init_data(
             args.artifacts,
             args.jeton_init_params,
@@ -234,7 +236,6 @@ enum Subcommand {
     KeyPair(CmdKeyPair),
     Config(CmdConfig),
     Mine(CmdMine),
-    MineJeton(CmdMineJeton),
     AddressFromInitData(CmdAddressFromInitData),
 }
 
@@ -516,6 +517,30 @@ struct CmdMine {
     /// also mine token address
     #[argh(option, long = "token-root")]
     token_root: Option<ton_block::MsgAddressInt>,
+
+    /// also mine jeton wallet address
+    #[argh(subcommand)]
+    jeton: Option<JetonSubCommand>,
+}
+
+#[derive(Debug, PartialEq, FromArgs)]
+/// Generates required address for the jeton wallet
+#[argh(subcommand, name = "jeton")]
+struct JetonSubCommand {
+    /// path to the TVC file
+    #[argh(option, long = "artifacts")]
+    artifacts: PathBuf,
+
+    /// array of init data param types
+    #[argh(option, long = "params")]
+    jeton_init_params: Vec<String>,
+
+    /// array of init data values
+    #[argh(option, long = "values")]
+    jeton_init_values: Vec<String>,
+    /// idx of the address owner in the init data
+    #[argh(option, long = "address-owner-idx")]
+    address_owner_idx: usize,
 }
 
 #[derive(Debug, PartialEq, FromArgs)]

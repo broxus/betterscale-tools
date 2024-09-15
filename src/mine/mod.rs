@@ -7,16 +7,13 @@ use everscale_crypto::ed25519;
 use nekoton_abi::BuildTokenValue;
 use nekoton_utils::TrustMe;
 use rand::distributions::Distribution;
-use ton_block::{Deserializable, Serializable};
-use ton_types::SliceData;
+use ton_block::{Deserializable, MsgAddrStd, Serializable};
+use ton_types::{SliceData, UInt256};
+
+use self::mine_jeton::{JetonConfig, JetonWallet};
 pub mod jeton_utils;
 pub mod mine_jeton;
 
-pub struct JetonConfig {
-    jeton_wallet_code: &'static dyn AsRef<Path>,
-    jeton_init_params: Vec<String>,
-    jeton_init_data: Vec<String>,
-}
 pub fn mine(
     tvc: impl AsRef<Path>,
     abi: impl AsRef<Path>,
@@ -33,6 +30,8 @@ pub fn mine(
         let abi = std::fs::read_to_string(abi).context("Failed to open ABI")?;
         ton_abi::Contract::load(&abi).context("Failed to read ABI")?
     };
+
+    let jeton_wallet = jeton_config.and_then(|config| Some(JetonWallet::new(config).unwrap()));
     let init_data_params = abi
         .data
         .values()
@@ -60,7 +59,7 @@ pub fn mine(
         ton_abi::ParamType::Uint(len) => len as u64,
         _ => return Err(anyhow::anyhow!("Nonce field must have type `uint256`")),
     };
-
+    println!("init data {}", init_data);
     let mut init_data =
         serde_json::from_str::<serde_json::Value>(init_data).context("Invalid init data")?;
     if let serde_json::Value::Object(value) = &mut init_data {
@@ -106,7 +105,7 @@ pub fn mine(
         let workchain_id = target.workchain_id() as i8;
         let target = target.address().get_bytestring(0);
         let mut token_state = token_state.clone();
-
+        let jeton_wallet = jeton_wallet.clone();
         let global_max_affinity = global_max_affinity.clone();
 
         threads.push(std::thread::spawn(move || -> Result<()> {
@@ -151,7 +150,17 @@ pub fn mine(
 
                     Some(token_wallet)
                 } else {
-                    if let Some(jeton_config) = jeton_config {
+                    if let Some(jeton_wallet) = jeton_wallet.clone() {
+                        let jeton_address = jeton_wallet.compute_address(&MsgAddrStd {
+                            anycast: None,
+                            workchain_id: 0,
+                            address: address.into(),
+                        })?;
+
+                        let token_address_affinity = affinity(jeton_address.as_slice(), &target);
+
+                        address_affinity = std::cmp::min(address_affinity, token_address_affinity);
+                        Some(jeton_address)
                     } else {
                         None
                     }
