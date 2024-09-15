@@ -545,46 +545,17 @@ struct JetonSubCommand {
 
 #[derive(Debug, PartialEq, FromArgs)]
 /// Generates required address for the contract
-#[argh(subcommand, name = "mine-jeton")]
-struct CmdMineJeton {
-    /// path to the TVC file
-    #[argh(option, long = "artifacts")]
-    artifacts: PathBuf,
-
-    /// path to the ABI file
-    #[argh(option, long = "params")]
-    jeton_init_params: Vec<String>,
-
-    /// path to the ABI file
-    #[argh(option, long = "values")]
-    jeton_init_values: Vec<String>,
-
-    /// target address
-    #[argh(option, long = "target")]
-    target: ton_block::MsgAddressInt,
-
-    /// nonce idx
-    #[argh(option, long = "nonce-idx")]
-    nonce_idx: usize,
-
-    /// min affinity
-    #[argh(option, long = "min-affinity")]
-    min_affinity: Option<u8>,
-}
-
-#[derive(Debug, PartialEq, FromArgs)]
-/// Generates required address for the contract
 #[argh(subcommand, name = "get-address")]
 struct CmdAddressFromInitData {
     /// path to the TVC file
     #[argh(option, long = "artifacts")]
     artifacts: PathBuf,
 
-    /// path to the ABI file
+    /// array of init data param types
     #[argh(option, long = "params")]
     jeton_init_params: Vec<String>,
 
-    /// path to the ABI file
+    /// array of init data values
     #[argh(option, long = "values")]
     jeton_init_values: Vec<String>,
 }
