@@ -154,7 +154,7 @@ impl JetonWallet {
         })
     }
 
-    pub fn compute_address(&self, nonce: &MsgAddrStd) -> Result<UInt256> {
+    pub fn compute_address(&self, nonce: &MsgAddrStd) -> Result<MsgAddressInt> {
         let init_data = string_params_to_cell(
             self.jeton_init_params.clone(),
             self.jeton_init_data.clone(),
@@ -166,6 +166,7 @@ impl JetonWallet {
             cell_from_hex(&self.compilation_artifacts.hex).unwrap(),
             init_data,
         )?;
-        Ok(init_state.serialize()?.repr_hash())
+        calculate_address(init_state, 0)
+        // Ok(init_state.serialize()?.repr_hash())
     }
 }

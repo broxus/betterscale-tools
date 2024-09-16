@@ -142,29 +142,30 @@ pub fn mine(
 
                 let mut address_affinity = affinity(address.as_slice(), &target);
 
-                let token_wallet = if let Some(token_state) = &mut token_state {
-                    let token_wallet = token_state.compute_address(address);
+                // let token_wallet = if let Some(token_state) = &mut token_state {
+                //     let token_wallet = token_state.compute_address(address);
 
-                    let token_address_affinity = affinity(token_wallet.as_slice(), &target);
+                //     let token_address_affinity = affinity(token_wallet.as_slice(), &target);
+                //     address_affinity = std::cmp::min(address_affinity, token_address_affinity);
+
+                //     Some(token_wallet)
+                // } else {
+                let token_wallet = if let Some(jeton_wallet) = jeton_wallet.clone() {
+                    let jeton_address = jeton_wallet.compute_address(&MsgAddrStd {
+                        anycast: None,
+                        workchain_id: 0,
+                        address: address.into(),
+                    })?;
+
+                    let token_address_affinity =
+                        affinity(&jeton_address.address().get_bytestring(0), &target);
+
                     address_affinity = std::cmp::min(address_affinity, token_address_affinity);
-
-                    Some(token_wallet)
+                    Some(jeton_address)
                 } else {
-                    if let Some(jeton_wallet) = jeton_wallet.clone() {
-                        let jeton_address = jeton_wallet.compute_address(&MsgAddrStd {
-                            anycast: None,
-                            workchain_id: 0,
-                            address: address.into(),
-                        })?;
-
-                        let token_address_affinity = affinity(jeton_address.as_slice(), &target);
-
-                        address_affinity = std::cmp::min(address_affinity, token_address_affinity);
-                        Some(jeton_address)
-                    } else {
-                        None
-                    }
+                    None
                 };
+                // };
 
                 if address_affinity <= max_affinity {
                     continue;
@@ -174,11 +175,11 @@ pub fn mine(
                 if global_max_affinity.fetch_max(address_affinity, Ordering::SeqCst) == max_affinity
                 {
                     let token_address = token_wallet
-                        .map(|addr| format!(" | Token: 0:{addr:x}"))
+                        .map(|addr| format!(" | Token: {addr}"))
                         .unwrap_or_default();
 
                     println!(
-                        "Bits: {} | Nonce: 0x{} | Address: {}:{:x}{}",
+                        "Bits: {} | Nonce: 0x{} | Address: {}:{:x} | Token: {})",
                         address_affinity,
                         nonce.to_str_radix(16),
                         workchain_id,
