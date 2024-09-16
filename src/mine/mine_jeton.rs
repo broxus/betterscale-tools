@@ -87,7 +87,6 @@ fn string_params_to_cell(
                         .unwrap();
                 }
                 Some(["coins"]) => {
-                    print!("{}", param_type);
                     builder
                         .append_coins(&BigUint::from_str(data[idx].as_str()).unwrap())
                         .unwrap();
@@ -97,6 +96,12 @@ fn string_params_to_cell(
                         if idx == nonce_idx {
                             builder
                                 .append_address(&MsgAddressInt::AddrStd(nonce_value.into()))
+                                .unwrap();
+                        } else {
+                            builder
+                                .append_address(
+                                    &ton_block::MsgAddressInt::from_str(&data[idx]).unwrap(),
+                                )
                                 .unwrap();
                         }
                     } else {
