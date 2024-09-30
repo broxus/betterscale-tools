@@ -6,7 +6,7 @@ use num_bigint::BigUint;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use ton_block::{MsgAddrStd, MsgAddressInt, Serializable, StateInit};
-use ton_types::{BuilderData, Cell, UInt256};
+use ton_types::{BuilderData, Cell, IBitstring, UInt256};
 
 use super::jeton_utils::{cell_from_base_64, cell_from_hex, make_state_init, IBitstringExt};
 
@@ -103,7 +103,7 @@ fn string_params_to_cell(
                                     &ton_block::MsgAddressInt::from_str(&data[idx]).unwrap(),
                                 )
                                 .unwrap();
-                        }
+                        };
                     } else {
                         builder
                             .append_address(

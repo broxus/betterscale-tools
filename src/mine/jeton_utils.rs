@@ -58,13 +58,17 @@ impl IBitstringExt for BuilderData {
             };
             self.append_bits(high_byte, num_bits_in_high_byte)?;
         }
-        let num_empty_bytes = num_full_bytes - bytes.len();
-        for _ in 0..num_empty_bytes {
-            self.append_u8(0)?;
+
+        if num_full_bytes > 0 {
+            let num_empty_bytes = num_full_bytes - bytes.len();
+            for _ in 0..num_empty_bytes {
+                self.append_u8(0)?;
+            }
+            for b in bytes {
+                self.append_u8(b)?;
+            }
         }
-        for b in bytes {
-            self.append_u8(b)?;
-        }
+
         Ok(self)
     }
 
