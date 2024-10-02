@@ -27,11 +27,21 @@ thiserror = "1.0"
 tl-proto = "0.3"
 tokio = { version = "1", features = ["macros", "sync", "rt-multi-thread"] }
 
-nekoton = { git = "https://github.com/broxus/nekoton.git", features = ["gql_transport", "jrpc_transport"] }
-nekoton-transport = { git = "https://github.com/broxus/nekoton.git", features = ["gql_transport", "jrpc_transport"] }
+nekoton = { git = "https://github.com/broxus/nekoton.git", features = [
+    "gql_transport",
+    "jrpc_transport",
+] }
+nekoton-transport = { git = "https://github.com/broxus/nekoton.git", features = [
+    "gql_transport",
+    "jrpc_transport",
+] }
 nekoton-utils = { git = "https://github.com/broxus/nekoton.git" }
 nekoton-abi = { git = "https://github.com/broxus/nekoton.git" }
 
-ton_block = { git = "https://github.com/broxus/ton-labs-block.git", features = ["venom"] }
+ton_block = { git = "https://github.com/broxus/ton-labs-block.git", features = [
+    "venom",
+] }
 ton_types = { git = "https://github.com/broxus/ton-labs-types.git" }
 ton_abi = { git = "https://github.com/broxus/ton-labs-abi.git" }
+num-traits = "0.2.19"
+regex = "1.10.6"

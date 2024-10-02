@@ -1,14 +1,18 @@
 use std::path::Path;
-use std::sync::atomic::{AtomicU8, Ordering};
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use std::sync::{Arc, RwLock};
 
 use anyhow::{Context, Result};
 use everscale_crypto::ed25519;
 use nekoton_abi::BuildTokenValue;
 use nekoton_utils::TrustMe;
 use rand::distributions::Distribution;
-use ton_block::{Deserializable, Serializable};
-use ton_types::SliceData;
+use ton_block::{Deserializable, MsgAddrStd, Serializable};
+use ton_types::{SliceData, UInt256};
+
+use self::mine_jeton::{JetonConfig, JetonWallet};
+pub mod jeton_utils;
+pub mod mine_jeton;
 
 pub fn mine(
     tvc: impl AsRef<Path>,
@@ -18,6 +22,8 @@ pub fn mine(
     pubkey: ed25519::PublicKey,
     target: ton_block::MsgAddressInt,
     token_root: Option<ton_block::MsgAddressInt>,
+    jeton_config: Option<JetonConfig>,
+    target_affinity: Option<u8>,
 ) -> Result<()> {
     let bytes = std::fs::read(tvc)?;
     let tvc = ton_block::StateInit::construct_from_bytes(&bytes).context("Failed to read TVC")?;
@@ -25,6 +31,8 @@ pub fn mine(
         let abi = std::fs::read_to_string(abi).context("Failed to open ABI")?;
         ton_abi::Contract::load(&abi).context("Failed to read ABI")?
     };
+
+    let jeton_wallet = jeton_config.and_then(|config| Some(JetonWallet::new(config).unwrap()));
     let init_data_params = abi
         .data
         .values()
@@ -52,7 +60,6 @@ pub fn mine(
         ton_abi::ParamType::Uint(len) => len as u64,
         _ => return Err(anyhow::anyhow!("Nonce field must have type `uint256`")),
     };
-
     let mut init_data =
         serde_json::from_str::<serde_json::Value>(init_data).context("Invalid init data")?;
     if let serde_json::Value::Object(value) = &mut init_data {
@@ -80,6 +87,7 @@ pub fn mine(
     let token_state = token_root.map(TokenState::new);
 
     let global_max_affinity = Arc::new(AtomicU8::new(0));
+    let result = Arc::new(RwLock::new(None));
 
     let mut threads = Vec::new();
 
@@ -98,9 +106,9 @@ pub fn mine(
         let workchain_id = target.workchain_id() as i8;
         let target = target.address().get_bytestring(0);
         let mut token_state = token_state.clone();
-
+        let jeton_wallet = jeton_wallet.clone();
         let global_max_affinity = global_max_affinity.clone();
-
+        let result = result.clone();
         threads.push(std::thread::spawn(move || -> Result<()> {
             let mut rng = rand::thread_rng();
 
@@ -109,6 +117,9 @@ pub fn mine(
             let mut max_affinity = 0;
 
             loop {
+                if result.read().unwrap().is_some() {
+                    return Ok(());
+                }
                 let nonce: num_bigint::BigUint = distribution.sample(&mut rng);
 
                 original_data
@@ -135,16 +146,48 @@ pub fn mine(
 
                 let mut address_affinity = affinity(address.as_slice(), &target);
 
-                let token_wallet = if let Some(token_state) = &mut token_state {
-                    let token_wallet = token_state.compute_address(address);
+                // let token_wallet = if let Some(token_state) = &mut token_state {
+                //     let token_wallet = token_state.compute_address(address);
 
-                    let token_address_affinity = affinity(token_wallet.as_slice(), &target);
+                //     let token_address_affinity = affinity(token_wallet.as_slice(), &target);
+                //     address_affinity = std::cmp::min(address_affinity, token_address_affinity);
+
+                //     Some(token_wallet)
+                // } else {
+                let token_wallet = if let Some(jeton_wallet) = jeton_wallet.clone() {
+                    let jeton_address = jeton_wallet.compute_address(&MsgAddrStd {
+                        anycast: None,
+                        workchain_id: 0,
+                        address: address.into(),
+                    })?;
+
+                    let token_address_affinity =
+                        affinity(&jeton_address.address().get_bytestring(0), &target);
+
                     address_affinity = std::cmp::min(address_affinity, token_address_affinity);
-
-                    Some(token_wallet)
+                    Some(jeton_address)
                 } else {
                     None
                 };
+
+                if let Some(target_affinity) = target_affinity {
+                    if address_affinity >= target_affinity {
+                        let token_address = token_wallet
+                            .clone()
+                            .map(|addr| format!(" | Token: {addr}"))
+                            .unwrap_or_default();
+                        result.write().unwrap().replace(format!(
+                            "Bits: {} | Nonce: 0x{} | Address: {}:{:x} | Token: {})",
+                            address_affinity,
+                            nonce.to_str_radix(16),
+                            workchain_id,
+                            address,
+                            token_address
+                        ));
+                    } else {
+                        continue;
+                    }
+                }
 
                 if address_affinity <= max_affinity {
                     continue;
@@ -154,11 +197,11 @@ pub fn mine(
                 if global_max_affinity.fetch_max(address_affinity, Ordering::SeqCst) == max_affinity
                 {
                     let token_address = token_wallet
-                        .map(|addr| format!(" | Token: 0:{addr:x}"))
+                        .map(|addr| format!(" | Token: {addr}"))
                         .unwrap_or_default();
 
                     println!(
-                        "Bits: {} | Nonce: 0x{} | Address: {}:{:x}{}",
+                        "Bits: {} | Nonce: 0x{} | Address: {}:{:x} | Token: {})",
                         address_affinity,
                         nonce.to_str_radix(16),
                         workchain_id,
@@ -176,7 +219,44 @@ pub fn mine(
             .expect("Failed to join thread")
             .context("Failed to mine address")?;
     }
+    println!("{}", result.clone().read().unwrap().clone().unwrap());
+    Ok(())
+}
 
+pub fn mine_multiple(
+    tvc: impl AsRef<Path>,
+    abi: impl AsRef<Path>,
+    field: &str,
+    init_data: &str,
+    pubkey: ed25519::PublicKey,
+    target: Vec<ton_block::MsgAddressInt>,
+    token_root: Option<ton_block::MsgAddressInt>,
+    jeton_config: Option<JetonConfig>,
+    target_affinity: Option<u8>,
+) -> Result<()> {
+    for target in target {
+        let tvc = tvc.as_ref();
+        let abi = abi.as_ref();
+        let field = field.to_string();
+        let init_data = init_data.to_string();
+        let pubkey = pubkey.clone();
+        let token_root = token_root.clone();
+        let jeton_config = jeton_config.clone();
+        let target_affinity = target_affinity.clone();
+        println!("Mining for target: {}", target);
+        mine(
+            tvc,
+            abi,
+            &field,
+            &init_data,
+            pubkey,
+            target,
+            token_root,
+            jeton_config,
+            target_affinity,
+        )
+        .expect("Failed to mine");
+    }
     Ok(())
 }
 
