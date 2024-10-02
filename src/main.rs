@@ -193,23 +193,47 @@ async fn run(app: App) -> Result<()> {
                 Ok(())
             }
         },
-        Subcommand::Mine(args) => mine::mine(
-            args.tvc,
-            args.abi,
-            &args.nonce_field,
-            &args.init_data,
-            parse_public_key(&args.pubkey).context("Invalid pubkey")?,
-            args.target,
-            args.token_root,
-            args.jeton.and_then(|params| {
-                Some(JetonConfig {
-                    init_data: params.jeton_init_values,
-                    init_params: params.jeton_init_params,
-                    nonce_address_idx: params.address_owner_idx,
-                    wallet_code: Box::new(params.artifacts.clone()),
-                })
-            }),
-        ),
+        Subcommand::Mine(args) => {
+            if args.targets.is_empty() {
+                mine::mine(
+                    args.tvc,
+                    args.abi,
+                    &args.nonce_field,
+                    &args.init_data,
+                    parse_public_key(&args.pubkey).context("Invalid pubkey")?,
+                    args.target,
+                    args.token_root,
+                    args.jeton.and_then(|params| {
+                        Some(JetonConfig {
+                            init_data: params.jeton_init_values,
+                            init_params: params.jeton_init_params,
+                            nonce_address_idx: params.address_owner_idx,
+                            wallet_code: Box::new(params.artifacts.clone()),
+                        })
+                    }),
+                    args.target_affinity,
+                )
+            } else {
+                mine::mine_multiple(
+                    args.tvc,
+                    args.abi,
+                    &args.nonce_field,
+                    &args.init_data,
+                    parse_public_key(&args.pubkey).context("Invalid pubkey")?,
+                    args.targets,
+                    args.token_root,
+                    args.jeton.and_then(|params| {
+                        Some(JetonConfig {
+                            init_data: params.jeton_init_values,
+                            init_params: params.jeton_init_params,
+                            nonce_address_idx: params.address_owner_idx,
+                            wallet_code: Box::new(params.artifacts.clone()),
+                        })
+                    }),
+                    args.target_affinity,
+                )
+            }
+        }
 
         Subcommand::AddressFromInitData(args) => mine::mine_jeton::get_address_from_init_data(
             args.artifacts,
@@ -507,8 +531,12 @@ struct CmdMine {
     nonce_field: String,
 
     /// target address
-    #[argh(option, long = "target")]
+    #[argh(option, long = "target", default = "default_config_address()")]
     target: ton_block::MsgAddressInt,
+
+    /// target address
+    #[argh(option, long = "targets")]
+    targets: Vec<ton_block::MsgAddressInt>,
 
     /// contract public key (000...000 by default)
     #[argh(option, long = "pubkey", default = "default_pubkey()")]
@@ -521,6 +549,10 @@ struct CmdMine {
     /// also mine jeton wallet address
     #[argh(subcommand)]
     jeton: Option<JetonSubCommand>,
+
+    /// also mine token address
+    #[argh(option, long = "target-affinity")]
+    target_affinity: Option<u8>,
 }
 
 #[derive(Debug, PartialEq, FromArgs)]

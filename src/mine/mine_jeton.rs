@@ -142,7 +142,6 @@ pub struct JetonWallet {
 
 impl JetonWallet {
     pub fn new(jeton_config: JetonConfig) -> Result<Self> {
-        println!("{:?}", jeton_config.wallet_code);
         let code_text = std::fs::read_to_string(jeton_config.wallet_code.as_ref())
             .expect("Failed to read jeton wallet code");
         let compilation_artifacts = serde_json::from_str::<CompilationArtifacts>(&code_text)?;

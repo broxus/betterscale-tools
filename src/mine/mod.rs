@@ -1,6 +1,6 @@
 use std::path::Path;
-use std::sync::atomic::{AtomicU8, Ordering};
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use std::sync::{Arc, RwLock};
 
 use anyhow::{Context, Result};
 use everscale_crypto::ed25519;
@@ -23,6 +23,7 @@ pub fn mine(
     target: ton_block::MsgAddressInt,
     token_root: Option<ton_block::MsgAddressInt>,
     jeton_config: Option<JetonConfig>,
+    target_affinity: Option<u8>,
 ) -> Result<()> {
     let bytes = std::fs::read(tvc)?;
     let tvc = ton_block::StateInit::construct_from_bytes(&bytes).context("Failed to read TVC")?;
@@ -59,7 +60,6 @@ pub fn mine(
         ton_abi::ParamType::Uint(len) => len as u64,
         _ => return Err(anyhow::anyhow!("Nonce field must have type `uint256`")),
     };
-    println!("init data {}", init_data);
     let mut init_data =
         serde_json::from_str::<serde_json::Value>(init_data).context("Invalid init data")?;
     if let serde_json::Value::Object(value) = &mut init_data {
@@ -87,6 +87,7 @@ pub fn mine(
     let token_state = token_root.map(TokenState::new);
 
     let global_max_affinity = Arc::new(AtomicU8::new(0));
+    let result = Arc::new(RwLock::new(None));
 
     let mut threads = Vec::new();
 
@@ -107,7 +108,7 @@ pub fn mine(
         let mut token_state = token_state.clone();
         let jeton_wallet = jeton_wallet.clone();
         let global_max_affinity = global_max_affinity.clone();
-
+        let result = result.clone();
         threads.push(std::thread::spawn(move || -> Result<()> {
             let mut rng = rand::thread_rng();
 
@@ -116,6 +117,9 @@ pub fn mine(
             let mut max_affinity = 0;
 
             loop {
+                if result.read().unwrap().is_some() {
+                    return Ok(());
+                }
                 let nonce: num_bigint::BigUint = distribution.sample(&mut rng);
 
                 original_data
@@ -165,7 +169,25 @@ pub fn mine(
                 } else {
                     None
                 };
-                // };
+
+                if let Some(target_affinity) = target_affinity {
+                    if address_affinity >= target_affinity {
+                        let token_address = token_wallet
+                            .clone()
+                            .map(|addr| format!(" | Token: {addr}"))
+                            .unwrap_or_default();
+                        result.write().unwrap().replace(format!(
+                            "Bits: {} | Nonce: 0x{} | Address: {}:{:x} | Token: {})",
+                            address_affinity,
+                            nonce.to_str_radix(16),
+                            workchain_id,
+                            address,
+                            token_address
+                        ));
+                    } else {
+                        continue;
+                    }
+                }
 
                 if address_affinity <= max_affinity {
                     continue;
@@ -197,7 +219,44 @@ pub fn mine(
             .expect("Failed to join thread")
             .context("Failed to mine address")?;
     }
+    println!("{}", result.clone().read().unwrap().clone().unwrap());
+    Ok(())
+}
 
+pub fn mine_multiple(
+    tvc: impl AsRef<Path>,
+    abi: impl AsRef<Path>,
+    field: &str,
+    init_data: &str,
+    pubkey: ed25519::PublicKey,
+    target: Vec<ton_block::MsgAddressInt>,
+    token_root: Option<ton_block::MsgAddressInt>,
+    jeton_config: Option<JetonConfig>,
+    target_affinity: Option<u8>,
+) -> Result<()> {
+    for target in target {
+        let tvc = tvc.as_ref();
+        let abi = abi.as_ref();
+        let field = field.to_string();
+        let init_data = init_data.to_string();
+        let pubkey = pubkey.clone();
+        let token_root = token_root.clone();
+        let jeton_config = jeton_config.clone();
+        let target_affinity = target_affinity.clone();
+        println!("Mining for target: {}", target);
+        mine(
+            tvc,
+            abi,
+            &field,
+            &init_data,
+            pubkey,
+            target,
+            token_root,
+            jeton_config,
+            target_affinity,
+        )
+        .expect("Failed to mine");
+    }
     Ok(())
 }
 
